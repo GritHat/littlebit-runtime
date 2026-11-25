@@ -348,6 +348,10 @@ littlebit_model * littlebit_model_load(const char * path, const littlebit_model_
         const littlebit_model_params p = params ? *params : littlebit_default_model_params();
         llama_model_params mp = llama_model_default_params();
         mp.n_gpu_layers = p.n_gpu_layers;
+        ggml_backend_dev_t no_devices[] = { nullptr };
+        if (p.n_gpu_layers == 0) {
+            mp.devices = no_devices; // otherwise a GPU may still be used for some operations
+        }
         mp.use_extra_bufts = p.repack;
         mp.load_mode    = p.use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE;
         std::unique_ptr<littlebit_model> m(new littlebit_model);
