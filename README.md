@@ -1,8 +1,9 @@
-# LittleBitOllama
+# littlebit-runtime
 
-A runtime for [LittleBit](https://github.com/SamsungLabs/LittleBit) language models: Llama, Qwen and Gemma models whose
-linear layers are compressed to between 0.1 and 1 bit per weight. It adds LittleBit layers to
-[llama.cpp](https://github.com/ggml-org/llama.cpp), and through it to [Ollama](https://github.com/ollama/ollama).
+A runtime for models compressed with [LittleBit](https://github.com/SamsungLabs/LittleBit), whose linear layers take
+between 0.1 and 1 bit per weight. It has two engines: one for Llama, Qwen and Gemma language models, which adds LittleBit
+layers to [llama.cpp](https://github.com/ggml-org/llama.cpp) and through it to [Ollama](https://github.com/ollama/ollama),
+and one for [Next-Concept models](docs/NCM.md). An independent project, not affiliated with Samsung.
 
 **Tested on a phone and a watch.** Qwen3-8B at 0.55 bits per weight runs at about 9 tokens/s on a Nothing Phone (4a) Pro,
 from a 1.43 GB file. The same 8-billion-parameter model also runs on a Galaxy Watch Ultra 2, at 6 seconds per token
@@ -14,7 +15,7 @@ because it does not fit in memory; an untrained 0.5-billion-parameter model, as 
 - `littlebit-convert`, which turns LittleBit checkpoints into GGUF
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
-- an engine for [Next-Concept models](docs/NCM.md) (Sudoku and TinyStories), dense or with LittleBit layers
+- `littlebit ncm` and `littlebit-ncm-convert`, for Next-Concept models (Sudoku and TinyStories), dense or with LittleBit layers
 
 The 8B file decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
 
