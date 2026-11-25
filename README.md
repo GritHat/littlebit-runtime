@@ -10,9 +10,10 @@ linear layers are compressed to between 0.1 and 1 bit per weight. It adds Little
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
 
-Qwen3-8B at 0.55 bits per weight becomes a 1.43 GB file and decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
+Qwen3-8B at 0.55 bits per weight becomes a 1.43 GB file and decodes at 18 to 20 tokens/s on a 2018 desktop CPU and 9
+tokens/s on a Nothing Phone (4a) Pro.
 
-> **Status: early.** Tested on x86-64 CPUs and, under emulation, ARM64. No GPU, phone or watch has been tried.
+> **Status: early.** Tested on x86-64 CPUs and one Android phone. No GPU, watch or Apple device has been tried.
 > A LittleBit model comes from training, not conversion: see [Models](#models).
 
 ## Install
@@ -98,8 +99,13 @@ a numpy model of exactly that rounding to 1.3e-3 or better, most to 1e-7. How mu
 little for the trained Qwen3-8B, a lot for the untrained Gemma. No trained LittleBit Gemma or Llama was available to test.
 
 **Test suite.** `ctest` checks tiny random models of all five architectures against their dense equivalents, every
-kernel against numpy, rejection of malformed files, the C API and the command line. It passes on x86-64 (also under
-address and undefined-behaviour sanitizers) and on ARM64 under QEMU, with dotprod and with i8mm kernels.
+kernel, plain and repacked, against numpy, rejection of malformed files, the C API and the command line. It passes on
+x86-64 and natively on an ARM64 phone, with dotprod and with i8mm kernels. An earlier version of the suite also passed
+under address and undefined-behaviour sanitizers.
+
+**Between machines.** Greedy output for a 48-token continuation was identical on the PC and the phone, but that is not
+guaranteed: moving every input scale by one fp32 rounding step changes the logits by 1.2 % on Qwen2.5-0.5B, as much as
+changing CPU or kernel set does. Each variant is equally far (1.1 %) from the result without 8-bit rounding.
 
 ## Limitations
 

@@ -1,8 +1,28 @@
 # Phones and watches
 
-Nothing here has run on a physical phone or watch yet. What has been done: the Android binaries build with NDK r27c,
-and the test suite passes on ARM64 under QEMU (Cortex-A76 for the default build, `max` for the i8mm build). Emulation
-proves correctness, not speed.
+Tested on one phone, a Nothing Phone (4a) Pro (SM7750, 8 GB, Android 17): the test suite passes natively with both
+builds below. Not tested on a watch.
+
+## Measured: Qwen3-8B at 0.55 bits per weight, 1.43 GB, on the phone
+
+| threads | 1 | 2 | 3 | 4 | 5 (default) | 6 | 8 |
+|---|---|---|---|---|---|---|---|
+| prompt, tok/s | 13.7 | 22.6 | 32.9 | 43.1 | 50.6 | 37.5 | 32.2 |
+| decode, tok/s | 4.0 | 5.7 | 7.5 | 8.9 | 8.9 | 7.4 | 8.2 |
+
+Single runs with the i8mm build and 128 + 64 tokens; the dotprod build decodes as fast and reads prompts about 10 %
+slower. The battery went from 25 to 35 degrees C over the few minutes of benchmarks, without thermal throttling being
+reported. Longer sessions were not tested.
+
+| | decode, tok/s | anonymous memory | peak RSS |
+|---|---|---|---|
+| default | 9 | 1.13 GB | 2.4 GB for a second while loading, then 2.0 GB |
+| `--no-mmap` | 9 | 1.53 GB | 1.5 GB |
+| `--no-repack` | 5 | 0.13 GB | 1.5 GB |
+
+Anonymous memory is what the system cannot drop; the rest is file-backed and can be read again, which costs speed.
+The default therefore leaves more memory available than `--no-mmap` despite its higher RSS. `--no-repack` is the option
+for devices with very little memory.
 
 ## What fits
 
@@ -25,9 +45,7 @@ At these rates the dense token embedding and lm_head dominate, so their quantiza
 model matter more than the bit rate of the linear layers. `scripts/quantize_dense.sh` re-quantizes them. The estimate is
 for the model process alone; check `MemAvailable` in `/proc/meminfo` on the device.
 
-Measured on x86-64: the 1.43 GB Qwen3-8B file peaks at 1.53 GB resident with a 512-token context, with and without
-memory mapping. Mapped pages are file-backed, so the kernel can drop them under memory pressure, at the price of reading
-them again. On ARM the factors are copied into a repacked layout for speed; `--no-repack` keeps them mapped.
+On x86-64, where nothing is repacked, the same file peaks at 1.53 GB resident with or without memory mapping.
 
 ## Build and run
 
@@ -46,8 +64,8 @@ Wear OS watches take the same binaries: enable *Developer options* and *Wireless
 
 ## Threads
 
-ggml's workers spin while waiting, so one busy core slows every operation. Qwen3-8B on an 8-core i7-9700K with a desktop
-session running:
+ggml's workers spin while waiting, so one busy core slows every operation. Qwen3-8B on an 8-core i7-9700K with a
+desktop session running:
 
 | threads | 1 | 2 | 4 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|

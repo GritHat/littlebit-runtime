@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check llama_littlebit_mul_mat (ggml CPU) against the numpy reference for layers of a LittleBit GGUF.
 
-    python tests/test_layer.py model.gguf [--all] [blk.0.attn_q ...]
+    python tests/test_layer.py model.gguf [--all] [--repack] [blk.0.attn_q ...]
 
 Compares against (a) the exact float math and (b) the same math with GGML's Q8_0 activation quantization
 simulated at both matmul inputs, which is what the CPU backend does for Q1_0 weights.
@@ -68,7 +68,7 @@ def rel(a, b):
     return float(np.linalg.norm(a - b) / np.linalg.norm(b))
 
 
-def check_gguf(path, binary=BIN, runner=(), names=None, all_layers=False) -> bool:
+def check_gguf(path, binary=BIN, runner=(), names=None, all_layers=False, repack=False) -> bool:
     reader = GGUFReader(path)
     names = names or sorted({x.name.rsplit(".", 1)[0] for x in reader.tensors
                              if x.name.endswith(".lb_u") and (all_layers or x.name.startswith("blk.0."))})
@@ -78,8 +78,8 @@ def check_gguf(path, binary=BIN, runner=(), names=None, all_layers=False) -> boo
         enc = load_layer(reader, base)
         with tempfile.TemporaryDirectory() as d:
             xf, yf = Path(d) / "x.bin", Path(d) / "y.bin"
-            subprocess.run([*runner, str(binary), str(path), base, str(n_tok), str(xf), str(yf)], check=True,
-                           stdout=subprocess.DEVNULL)
+            out = subprocess.run([*runner, str(binary), str(path), base, str(n_tok), str(xf), str(yf),
+                                  *(["repack"] if repack else [])], check=True, capture_output=True, text=True)
             x = np.fromfile(xf, dtype=np.float32).reshape(n_tok, enc.n_in).astype(np.float64)
             y = np.fromfile(yf, dtype=np.float32).reshape(n_tok, enc.n_out)
         e_float = rel(y, forward(enc, x, False))
@@ -87,13 +87,14 @@ def check_gguf(path, binary=BIN, runner=(), names=None, all_layers=False) -> boo
         # 2e-3 leaves room for a few rounding ties; the typical value is 5e-8
         good = e_act < 2e-3
         ok &= good
-        print(f"{'ok  ' if good else 'FAIL'} {base:24s} rel.err vs float={e_float:.2e}  vs rounded activations={e_act:.2e}")
+        print(f"{'ok  ' if good else 'FAIL'} {base:24s} {out.stdout.split()[-1]} rel.err vs float={e_float:.2e}  vs rounded activations={e_act:.2e}")
     return ok
 
 
 def main() -> int:
-    args = [a for a in sys.argv[1:] if a != "--all"]
-    return 0 if check_gguf(args[0], names=args[1:], all_layers="--all" in sys.argv) else 1
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    return 0 if check_gguf(args[0], names=args[1:], all_layers="--all" in sys.argv,
+                           repack="--repack" in sys.argv, runner=os.environ.get("LITTLEBIT_RUNNER", "").split()) else 1
 
 
 if __name__ == "__main__":

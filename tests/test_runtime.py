@@ -68,10 +68,12 @@ def test_repacked_kernels(tmp_path, batch):
 
 
 @pytest.mark.parametrize("kind", ["q1_0", "f16", "f32"])
+@pytest.mark.parametrize("repack", [False, True])
 @pytest.mark.parametrize("arch", ["llama", "gemma3"])
-def test_kernels(tmp_path, arch, kind):
+def test_kernels(tmp_path, arch, repack, kind):
     """Every layer equals numpy with the activation rounding ggml applies (Q8_0 or none)."""
-    assert check_gguf(tiny.write(tmp_path / "m.gguf", arch, kind), BIN / "test_layer", runner=RUNNER, all_layers=True)
+    assert check_gguf(tiny.write(tmp_path / "m.gguf", arch, kind), BIN / "test_layer", runner=RUNNER, all_layers=True,
+                      repack=repack)
 
 
 def bad(name_part, fn):

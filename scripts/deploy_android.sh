@@ -5,7 +5,6 @@
 #   scripts/deploy_android.sh model.gguf run -p "The capital of France is" -n 32
 #
 # Select a device with ANDROID_SERIAL and another build with BIN=dist/android-arm64-...
-# Not yet tried on a physical device.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 [ $# -ge 1 ] || die "usage: $0 model.gguf [command and options]"
@@ -18,7 +17,7 @@ NAME=$(basename "$MODEL")
 adb shell mkdir -p "$DEV"
 adb push "$BIN/littlebit" "$DEV/"
 SIZE=$(wc -c < "$MODEL" | tr -d ' ')
-if [ "$(adb shell "wc -c < '$DEV/$NAME' 2>/dev/null" | tr -d ' \r')" != "$SIZE" ]; then
+if [ "$(adb shell "cat '$DEV/$NAME' 2>/dev/null | wc -c" | tr -d ' \r')" != "$SIZE" ]; then
     adb push "$MODEL" "$DEV/$NAME"
 fi
 adb shell "grep -E 'MemTotal|MemAvailable' /proc/meminfo"
