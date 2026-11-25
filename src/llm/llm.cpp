@@ -1,80 +1,28 @@
-#include "littlebit.h"
-#include "internal.h"
+#include "littlebit_llm.h"
+#include "../core/internal.h"
 
 #include "ggml-backend.h"
 #include "llama.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <fstream>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 
-#ifndef LITTLEBIT_VERSION
-#define LITTLEBIT_VERSION "0.0.0"
-#endif
+using namespace littlebit_internal;
 
 namespace {
 
-thread_local std::string g_error;
-thread_local std::string g_llama_error; // first error line logged by libllama on this thread
-
-std::mutex       g_log_mutex;
-littlebit_log_cb g_log_cb = [](int level, const char * text, void *) {
-    if (level >= 3) {
-        fputs(text, stderr);
-    }
-};
-void * g_log_user = nullptr;
-
-void log_forward(ggml_log_level level, const char * text, void *) {
-    thread_local ggml_log_level last = GGML_LOG_LEVEL_INFO;
-    if (level != GGML_LOG_LEVEL_CONT) {
-        last = level;
-    }
-    if (last == GGML_LOG_LEVEL_ERROR && g_llama_error.empty()) {
-        g_llama_error = text;
-        while (!g_llama_error.empty() && g_llama_error.back() == '\n') {
-            g_llama_error.pop_back();
-        }
-    }
-    std::lock_guard<std::mutex> lock(g_log_mutex);
-    if (g_log_cb) {
-        g_log_cb((int) last, text, g_log_user);
-    }
-}
-
-void init_once() {
+void init_llama() {
     static std::once_flag once;
     std::call_once(once, [] {
         llama_log_set(log_forward, nullptr);
-        ggml_backend_load_all();
         llama_backend_init();
     });
-}
-
-[[noreturn]] void fail(const std::string & what) {
-    throw std::runtime_error(what);
-}
-
-template <typename R, typename F> R guarded(R on_error, F && f) {
-    try {
-        g_error.clear();
-        g_llama_error.clear();
-        return f();
-    } catch (const std::exception & e) {
-        g_error = e.what();
-    } catch (...) {
-        g_error = "unknown error";
-    }
-    return on_error;
 }
 
 // length of the longest prefix of s that does not end inside a UTF-8 sequence
@@ -123,15 +71,7 @@ std::vector<llama_token> tokenize(const llama_vocab * vocab, const std::string &
     return toks;
 }
 
-double now_ms() {
-    using namespace std::chrono;
-    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
-}
-
 } // namespace
-
-void littlebit_internal::init() { init_once(); }
-void littlebit_internal::set_error(const std::string & what) { g_error = what; }
 
 struct littlebit_model {
     std::unique_ptr<llama_model, model_deleter> model;
@@ -308,48 +248,6 @@ struct littlebit_session {
 
 extern "C" {
 
-const char * littlebit_version(void)    { return LITTLEBIT_VERSION; }
-const char * littlebit_last_error(void) { return g_error.c_str(); }
-
-void littlebit_set_log(littlebit_log_cb cb, void * user) {
-    std::lock_guard<std::mutex> lock(g_log_mutex);
-    g_log_cb   = cb;
-    g_log_user = user;
-}
-
-// one value per CPU, or nothing if the file is missing for some CPU
-static std::vector<long> read_cpus(int32_t n, const char * file) {
-    std::vector<long> res;
-    for (int32_t i = 0; i < n; ++i) {
-        std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/" + file);
-        long v = 0;
-        if (!(f >> v) || v <= 0) {
-            return {};
-        }
-        res.push_back(v);
-    }
-    return res;
-}
-
-// Heterogeneous CPUs (phones, watches): the cores within 80% of the fastest. The kernel's capacity is preferred to the
-// clock because small and big cores can run at similar clocks.
-// Homogeneous CPUs: leave one core free from 4 cores up, two from 8 up - ggml's workers spin.
-int32_t littlebit_default_threads(void) {
-    const int32_t n = std::max(1, (int32_t) std::thread::hardware_concurrency());
-    for (const char * file : { "cpu_capacity", "cpufreq/cpuinfo_max_freq" }) {
-        const std::vector<long> speed = read_cpus(n, file);
-        if (speed.empty()) {
-            continue;
-        }
-        const long top = *std::max_element(speed.begin(), speed.end());
-        const int32_t big = (int32_t) std::count_if(speed.begin(), speed.end(), [top](long v) { return v * 10 >= top * 8; });
-        if (big < n) {
-            return big;
-        }
-    }
-    return n >= 8 ? n - 2 : n >= 4 ? n - 1 : n;
-}
-
 littlebit_model_params littlebit_default_model_params(void) { return { 0, true, true, false }; }
 littlebit_session_params littlebit_default_session_params(void) { return { 2048, 256, 0, LITTLEBIT_KV_F16 }; }
 littlebit_gen_params littlebit_default_gen_params(void) { return { 256, 0.7f, 40, 0.95f, LLAMA_DEFAULT_SEED }; }
@@ -359,7 +257,8 @@ littlebit_model * littlebit_model_load(const char * path, const littlebit_model_
         if (!path) {
             fail("path is NULL");
         }
-        init_once();
+        init();
+        init_llama();
         const littlebit_model_params p = params ? *params : littlebit_default_model_params();
         llama_model_params mp = llama_model_default_params();
         mp.n_gpu_layers = p.n_gpu_layers;
@@ -372,7 +271,7 @@ littlebit_model * littlebit_model_load(const char * path, const littlebit_model_
         std::unique_ptr<littlebit_model> m(new littlebit_model);
         m->model.reset(llama_model_load_from_file(path, mp));
         if (!m->model) {
-            fail(std::string("failed to load '") + path + "'" + (g_llama_error.empty() ? "" : ": " + g_llama_error));
+            fail(std::string("failed to load '") + path + "'" + (log_error().empty() ? "" : ": " + log_error()));
         }
         if (p.require_littlebit && meta_str(m->model.get(), "littlebit.version").empty()) {
             fail(std::string("'") + path + "' is not a LittleBit model");
@@ -441,7 +340,7 @@ littlebit_session * littlebit_session_new(littlebit_model * model, const littleb
         s->n_batch = (int32_t) cp.n_batch;
         s->ctx.reset(llama_init_from_model(model->model.get(), cp));
         if (!s->ctx) {
-            fail("failed to create the context" + (g_llama_error.empty() ? "" : ": " + g_llama_error));
+            fail("failed to create the context" + (log_error().empty() ? "" : ": " + log_error()));
         }
         return s.release();
     });

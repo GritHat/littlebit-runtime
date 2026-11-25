@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 LLAMA = Path(os.environ.get("LLAMA_CPP_DIR", ROOT / "build" / "_deps" / "llama_cpp-src"))
-sys.path[:0] = [str(ROOT), str(LLAMA / "gguf-py")]
+sys.path[:0] = [str(ROOT / "python"), str(LLAMA / "gguf-py")]
 
 import gguf  # noqa: E402
 

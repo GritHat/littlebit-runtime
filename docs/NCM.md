@@ -3,7 +3,7 @@
 [Next-Concept Modeling](https://github.com/HazyResearch/ncm) (arXiv 2610.14162) generates a whole text at once: a transformer
 predicts one level of discrete codes after another, from coarse to fine, all codes of a level in parallel, and a small
 decoder turns the sum of the code embeddings into tokens. llama.cpp generates one token after another and cannot run such
-models, so this runtime has an engine of its own for them (`src/ncm.cpp`), on ggml and with the same LittleBit layers.
+models, so this runtime has an engine of its own for them (`src/ncm`), on ggml and with the same LittleBit layers.
 
 Supported: the Sudoku and TinyStories models. The converter refuses the others (LM1B, OpenWebText, WMT14, XSum), which use
 further variations of the architecture. CPU only.
@@ -20,12 +20,12 @@ littlebit ncm stories.gguf --temp 0.7 --seed 1
 
 `--config` matters: the `config.yaml` files published with the Sudoku checkpoints do not enable the soft decisions that the
 official evaluation uses, its `config/eval/*.yaml` do. `--student student.pt` takes the generator from a LittleBit state
-dict (`tools/ncm/train_sudoku.py`). In C, see `littlebit_ncm_*` in [littlebit.h](../include/littlebit.h). A sudoku answer is
+dict (`tools/ncm/train_sudoku.py`). In C, see `littlebit_ncm_*` in [littlebit_ncm.h](../include/littlebit_ncm.h). A sudoku answer is
 the model's output and is not checked.
 
 ## Validation
 
-`tests/test_ncm.py` compares tiny random models, with dense and with LittleBit layers, to a numpy implementation.
+`tests/ncm/test_ncm.py` compares tiny random models, with dense and with LittleBit layers, to a numpy implementation.
 `tools/ncm/compare.py` compares a Sudoku model with the official PyTorch code; TinyStories was compared in the same way.
 Relative error of the logits of each level, on the CPU:
 

@@ -1,10 +1,9 @@
 """Runtime tests on tiny random models: graph correctness, loader validation, C API, CLI. No downloads needed.
 
-    LITTLEBIT_BIN=build/bin pytest tests/test_runtime.py      (or: ctest --test-dir build)
+    LITTLEBIT_BIN=build/bin pytest tests/llm/test_runtime.py      (or: ctest --test-dir build)
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,33 +11,20 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "tests"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path[:0] = [str(ROOT / "tests"), str(ROOT / "tests" / "llm")]
 
 import tiny  # noqa: E402
+from common import BIN, RUNNER, cli, rel, run  # noqa: E402
 from test_layer import check_gguf  # noqa: E402
 
-BIN = Path(os.environ.get("LITTLEBIT_BIN", ROOT / "build" / "bin"))
-RUNNER = os.environ.get("LITTLEBIT_RUNNER", "").split()  # e.g. an emulator for cross-compiled binaries
 TOKENS = [1, 10, 50, 90, 7, 33, 201, 150, 60, 11, 12, 13]
-
-
-def run(*cmd, check=True, **kw):
-    return subprocess.run([*RUNNER, *map(str, cmd)], check=check, capture_output=True, text=True, errors="replace", timeout=600, **kw)
-
-
-def cli(*args, **kw):
-    return run(BIN / "littlebit", *args, **kw)
 
 
 def logits(path: Path, *args) -> np.ndarray:
     out = path.with_suffix(".bin")
     cli("logits", path, "--tokens", ",".join(map(str, TOKENS)), "--out", out, "-t", 2, "--kv", "f32", *args)
     return np.fromfile(out, dtype=np.float32).reshape(len(TOKENS), -1)
-
-
-def rel(a, b) -> float:
-    return float(np.linalg.norm(a - b) / np.linalg.norm(b))
 
 
 @pytest.mark.parametrize("residual", [False, True])

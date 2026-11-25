@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check llama_littlebit_mul_mat (ggml CPU) against the numpy reference for layers of a LittleBit GGUF.
 
-    python tests/test_layer.py model.gguf [--all] [--repack] [blk.0.attn_q ...]
+    python tests/llm/test_layer.py model.gguf [--all] [--repack] [blk.0.attn_q ...]
 
 Compares against (a) the exact float math and (b) the same math with GGML's Q8_0 activation quantization
 simulated at both matmul inputs, which is what the CPU backend does for Q1_0 weights.
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "python"))
 sys.path.insert(0, str(Path(os.environ.get("LLAMA_CPP_DIR", ROOT / "build" / "_deps" / "llama_cpp-src")) / "gguf-py"))
 
 from gguf import GGUFReader  # noqa: E402

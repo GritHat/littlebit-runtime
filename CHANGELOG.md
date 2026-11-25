@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Engine, converter and C API for Next-Concept Modeling (NCM) models, dense or with LittleBit layers.
+- The C API is split into `littlebit.h`, `littlebit_llm.h` and `littlebit_ncm.h`; either engine can be left out of a build.
 
 ## 0.1.0
 

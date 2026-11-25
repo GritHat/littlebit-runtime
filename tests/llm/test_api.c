@@ -1,5 +1,5 @@
-// C API checks: test_api MODEL.gguf  (run by tests/test_runtime.py on a tiny model)
-#include "littlebit.h"
+// C API checks: test_api MODEL.gguf  (run by tests/llm/test_runtime.py on a tiny model)
+#include "littlebit_llm.h"
 
 #include <stdio.h>
 #include <stdlib.h>

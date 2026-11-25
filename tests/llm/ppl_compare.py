@@ -3,7 +3,7 @@
 on identical wikitext-2 test windows (LittleBit eval.py methodology: non-overlapping windows over
 "\\n\\n".join(test), loss on all seqlen-1 positions).
 
-    python tests/ppl_compare.py <littlebit ckpt> <model.gguf> [--windows 4] [--seqlen 512] [--skip-official]
+    python tests/llm/ppl_compare.py <littlebit ckpt> <model.gguf> [--windows 4] [--seqlen 512] [--skip-official]
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def wikitext2_test_ids(tok) -> np.ndarray:
@@ -33,7 +33,7 @@ def log_softmax(x):
 
 def official_logits(ck: Path, windows: list[np.ndarray]) -> list[np.ndarray]:
     import torch
-    sys.path.insert(0, str(ROOT / "tools"))
+    sys.path.insert(0, str(ROOT / "tools" / "llm"))
     from official_loader import load_official
     model = load_official(ck)
     out = []

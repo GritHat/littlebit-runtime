@@ -43,7 +43,7 @@ LITTLEBIT_CONFIG_KEYS = ("auto_map", "quant_func", "quant_mod", "eff_bit", "spli
 def default_llama_cpp_dir() -> Path:
     if env := os.environ.get("LLAMA_CPP_DIR"):
         return Path(env)
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     return root / "build" / "_deps" / "llama_cpp-src"
 
 

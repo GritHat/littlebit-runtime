@@ -84,7 +84,7 @@ static 64-bit binary that runs there all the same; run it with
 `BIN=dist/android-arm64-armv8_2_a_dotprod_fp16-static scripts/deploy_android.sh ...`. Apps on such watches are 32-bit and
 would need `ANDROID_ABI=armeabi-v7a` and its much lower speed. To connect, enable *Developer options* and *Wireless debugging*, then `adb pair` and
 `adb connect`, and select the watch with `ANDROID_SERIAL`. A phone app would bundle `liblittlebit.so` and call
-[`littlebit.h`](../include/littlebit.h) through JNI.
+[`littlebit_llm.h` or `littlebit_ncm.h`](../include) through JNI.
 
 ## Threads
 

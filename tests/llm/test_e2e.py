@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """End-to-end: dense HF model -> official LittleBit checkpoint -> GGUF -> runtime, vs the official PyTorch code.
 
-    python tests/test_e2e.py <hf_dir> <name> [make_littlebit_checkpoint.py args...]
+    python tests/llm/test_e2e.py <hf_dir> <name> [make_littlebit_checkpoint.py args...]
 
 Pass criteria
-  1. every LittleBit layer of the model equals numpy with Q8_0 activations (tests/test_layer.py --all)
+  1. every LittleBit layer of the model equals numpy with Q8_0 activations (tests/llm/test_layer.py --all)
   2. with F32 factors the runtime agrees with the official PyTorch forward as well as ordinary dense F32 weights do
 Q1_0 results are reported, not judged: the checkpoints are untrained initializations, whose sensitivity to the
 8-bit activations of any quantized llama.cpp format ranges from negligible to total.
@@ -17,10 +17,10 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 PY = sys.executable
 BIN = ROOT / "build" / "bin"
-sys.path.insert(0, str(ROOT / "tests"))
+sys.path.insert(0, str(ROOT / "tests" / "llm"))
 from compare_logits import compare  # noqa: E402
 from test_layer import check_gguf  # noqa: E402
 
@@ -44,7 +44,7 @@ def main() -> int:
     ck = ROOT / "models" / "lb" / name
     gg = ROOT / "models" / "gguf"
     gg.mkdir(parents=True, exist_ok=True)
-    make = [PY, ROOT / "tools" / "make_littlebit_checkpoint.py", hf, ck, "--no-tokenizer", "--ref-tokens", toks, *extra]
+    make = [PY, ROOT / "tools" / "llm" / "make_littlebit_checkpoint.py", hf, ck, "--no-tokenizer", "--ref-tokens", toks, *extra]
     if (ck / "model.safetensors").exists():
         make.append("--ref-only")
     run(*make)

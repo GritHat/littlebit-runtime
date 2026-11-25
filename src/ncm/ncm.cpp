@@ -1,7 +1,7 @@
 // Next-Concept Modeling (arXiv 2610.14162) on ggml. A level of codes is predicted in parallel from everything coarser, so
-// llama.cpp's one-token-at-a-time context does not apply. docs/FORMAT.md describes the file.
-#include "littlebit.h"
-#include "internal.h"
+// llama.cpp's one-token-at-a-time context does not apply. docs/NCM.md describes the file.
+#include "littlebit_ncm.h"
+#include "../core/internal.h"
 
 #include "ggml.h"
 #include "ggml-alloc.h"
@@ -12,7 +12,6 @@
 #include "llama-littlebit.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -24,28 +23,9 @@
 #include <string>
 #include <vector>
 
+using namespace littlebit_internal;
+
 namespace {
-
-[[noreturn]] void fail(const std::string & what) {
-    throw std::runtime_error(what);
-}
-
-template <typename R, typename F> R guarded(R on_error, F && f) {
-    try {
-        littlebit_internal::set_error("");
-        return f();
-    } catch (const std::exception & e) {
-        littlebit_internal::set_error(e.what());
-    } catch (...) {
-        littlebit_internal::set_error("unknown error");
-    }
-    return on_error;
-}
-
-double now_ms() {
-    using namespace std::chrono;
-    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
-}
 
 // x/2 (1 + erf(x/sqrt 2)), to about 2e-7. ggml_gelu_erf calls erff for every element and takes a large part of the run time.
 void gelu_row(float * y, const float * x, int64_t n) {
@@ -833,7 +813,7 @@ littlebit_ncm * littlebit_ncm_load(const char * path, const littlebit_ncm_params
         if (!path) {
             fail("path is NULL");
         }
-        littlebit_internal::init();
+        init();
         std::unique_ptr<littlebit_ncm> m(new littlebit_ncm);
         m->load(path, params ? *params : littlebit_default_ncm_params());
         return m.release();

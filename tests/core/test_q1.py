@@ -1,4 +1,4 @@
-"""Unit tests for the LittleBit -> Q1_0 encoding (fast, no model needed).  Run: pytest tests/test_q1.py"""
+"""Unit tests for the LittleBit -> Q1_0 encoding (fast, no model needed).  Run: pytest tests/core/test_q1.py"""
 import os
 import sys
 from pathlib import Path
@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "python"))
 
 from littlebit_gguf.ckpt import find_littlebit_groups  # noqa: E402
 from littlebit_gguf.q1 import (QK1_0, Branch, dequant_q1_0, encode_layer, encoded_dense, pack_q1_0,  # noqa: E402

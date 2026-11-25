@@ -10,7 +10,7 @@ because it does not fit in memory; an untrained 0.5-billion-parameter model, as 
 42 tokens/s there. See [the measurements](docs/DEVICES.md).
 
 - `littlebit`, a command line tool: run, chat, benchmark, and serve an OpenAI-compatible API
-- `liblittlebit`, a shared library with a small [C API](include/littlebit.h) for embedding
+- `liblittlebit`, a shared library with a small [C API](include) for embedding
 - `littlebit-convert`, which turns LittleBit checkpoints into GGUF
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
@@ -62,7 +62,7 @@ The trained model used for validation is a third-party upload,
 [LittleBitLLM/littlebit-qwen3-8b-0.55bpw](https://huggingface.co/LittleBitLLM/littlebit-qwen3-8b-0.55bpw)
 (CC BY-NC 4.0). It continues plain text but does not answer chat prompts, here or in Samsung's implementation.
 
-`tools/make_littlebit_checkpoint.py` runs only the initialization step of LittleBit. Its output exercises the runtime
+`tools/llm/make_littlebit_checkpoint.py` runs only the initialization step of LittleBit. Its output exercises the runtime
 but is not a usable model.
 
 ## How it works
@@ -76,7 +76,7 @@ which llama.cpp creates layer weights and multiplies by them. [docs/FORMAT.md](d
 ## Validation
 
 **Trained model.** Qwen3-8B, 0.55 bpw, against Samsung's PyTorch code on the same 8 × 512 tokens of wikitext-2
-(`tests/test_trained_qwen3_8b.sh`):
+(`tests/llm/test_trained_qwen3_8b.sh`):
 
 | | PyTorch, fp32 | this runtime |
 |---|---|---|
@@ -88,7 +88,7 @@ which llama.cpp creates layer weights and multiplies by them. [docs/FORMAT.md](d
 The 252 linear layers (6.95 billion weights) take 536 MiB: 0.65 bits per weight, above the 0.55 target because ranks are
 padded to 128 and blocks carry a scale.
 
-**Untrained initializations** of real models, made and evaluated with Samsung's code (`tests/run_all.sh`). KL divergence
+**Untrained initializations** of real models, made and evaluated with Samsung's code (`tests/llm/run_all.sh`). KL divergence
 from Samsung's PyTorch output:
 
 | model | bits per weight | dense F32 weights | F32 factors | Q1_0 factors |
@@ -111,6 +111,20 @@ under address and undefined-behaviour sanitizers.
 **Between machines.** Greedy output for a 48-token continuation was identical on the PC and the phone, but that is not
 guaranteed: moving every input scale by one fp32 rounding step changes the logits by 1.2 % on Qwen2.5-0.5B, as much as
 changing CPU or kernel set does. Each variant is equally far (1.1 %) from the result without 8-bit rounding.
+
+## Layout
+
+| | shared | language models (llama.cpp) | Next-Concept models (ggml) |
+|---|---|---|---|
+| engine | `src/core` | `src/llm` | `src/ncm` |
+| C API | `littlebit.h` | `littlebit_llm.h` | `littlebit_ncm.h` |
+| converter | `python/littlebit_gguf/{q1,ckpt}.py` | `convert.py` | `ncm.py` |
+| tests | `tests/core` | `tests/llm` | `tests/ncm` |
+| training and reference code | | `tools/llm` | `tools/ncm` |
+
+The engines depend on the shared part and not on each other. `-DLITTLEBIT_LLM=OFF` or `-DLITTLEBIT_NCM=OFF` leaves one
+out: a command line tool with only the NCM engine is 2.3 MB on x86-64. `tools/` may import Samsung's CC BY-NC code; nothing
+else does, apart from comparison tests.
 
 ## Limitations
 

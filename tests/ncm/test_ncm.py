@@ -1,10 +1,9 @@
 """NCM engine tests on tiny random models against a numpy implementation of the published model. No downloads, no torch.
 
-    LITTLEBIT_BIN=build/bin pytest tests/test_ncm.py      (or: ctest --test-dir build)
+    LITTLEBIT_BIN=build/bin pytest tests/ncm/test_ncm.py      (or: ctest --test-dir build)
 """
 from __future__ import annotations
 
-import os
 import sys
 from math import erf
 from pathlib import Path
@@ -12,13 +11,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tests"))
 
+from common import LLAMA, cli, rel  # noqa: E402
 from littlebit_gguf import ncm as N  # noqa: E402
-from test_runtime import cli, rel  # noqa: E402
 
-LLAMA = Path(os.environ.get("LLAMA_CPP_DIR", ROOT / "build/_deps/llama_cpp-src"))
 VERF = np.vectorize(erf)
 
 VARIANTS = {

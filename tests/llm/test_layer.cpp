@@ -5,7 +5,7 @@
 // With "repack", the factors go through the CPU backend's repacked layout where it has one.
 //
 // Loads the LittleBit factors of one layer from a GGUF, feeds random activations through the exact graph
-// that llama.cpp builds, and writes x and y so that tests/test_layer.py can compare against numpy.
+// that llama.cpp builds, and writes x and y so that tests/llm/test_layer.py can compare against numpy.
 
 #include "ggml.h"
 #include "ggml-backend.h"

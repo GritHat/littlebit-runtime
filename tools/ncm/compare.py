@@ -23,7 +23,7 @@ ap.add_argument("--n", type=int, default=5)
 ap.add_argument("--threads", type=int, default=2)
 ap.add_argument("--bin", type=Path, default=Path(__file__).resolve().parents[2] / "build/bin/littlebit")
 a = ap.parse_args()
-sys.path[:0] = [str(a.ncm.resolve()), str(Path(__file__).resolve().parents[2])]
+sys.path[:0] = [str(a.ncm.resolve()), str(Path(__file__).resolve().parents[2] / "python")]
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from omegaconf import OmegaConf  # noqa: E402

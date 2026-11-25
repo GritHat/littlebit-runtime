@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Greedy generation with the *official* LittleBit PyTorch implementation (reference for the runtime).
 
-    python tools/official_generate.py <littlebit ckpt dir> <tokenizer dir> "prompt" [n_tokens]
+    python tools/llm/official_generate.py <littlebit ckpt dir> <tokenizer dir> "prompt" [n_tokens]
 """
 import sys
 from pathlib import Path

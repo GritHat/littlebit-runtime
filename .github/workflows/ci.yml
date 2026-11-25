@@ -21,6 +21,17 @@ jobs:
       - run: cmake -B build -DLITTLEBIT_SERVER=OFF -DPython3_EXECUTABLE="$(which python)"
       - run: cmake --build build -j 4
       - run: ctest --test-dir build --output-on-failure
+  ncm-only:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pyyaml tqdm requests pytest
+      - run: cmake -B build -DLITTLEBIT_LLM=OFF -DPython3_EXECUTABLE="$(which python)"
+      - run: cmake --build build -j 4
+      - run: ctest --test-dir build --output-on-failure
   android:
     runs-on: ubuntu-24.04
     steps:
@@ -34,4 +45,4 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck -x -P SCRIPTDIR scripts/*.sh tests/*.sh
+      - run: shellcheck -x -P SCRIPTDIR scripts/*.sh tests/llm/*.sh

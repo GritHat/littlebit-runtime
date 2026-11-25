@@ -8,7 +8,7 @@ the starting point of QAT on a GPU (`main.py` in the LittleBit repo). Real deplo
 QAT-trained checkpoint.
 
 Optionally dumps reference logits from the official PyTorch LittleBit forward for a token sequence, so the
-llama.cpp runtime can be checked against it (tests/test_e2e.py).
+llama.cpp runtime can be checked against it (tests/llm/test_e2e.py).
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def main() -> None:
@@ -99,7 +99,7 @@ def dump_reference(args, qargs) -> None:
     import numpy as np
     import torch
 
-    sys.path.insert(0, str(ROOT / "tools"))
+    sys.path.insert(0, str(ROOT / "tools" / "llm"))
     from official_loader import load_official
 
     ids = torch.tensor([[int(t) for t in args.ref_tokens.split(",")]])
