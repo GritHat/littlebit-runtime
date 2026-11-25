@@ -4,7 +4,8 @@
 #   scripts/deploy_android.sh model.gguf [littlebit arguments, default: bench]
 #   scripts/deploy_android.sh model.gguf run -p "The capital of France is" -n 32
 #
-# Select a device with ANDROID_SERIAL and another build with BIN=dist/android-arm64-...
+# Select a device with ANDROID_SERIAL and another build with BIN=dist/android-... A watch may suspend the program when
+# its screen turns off; keep it awake and on the charger.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 [ $# -ge 1 ] || die "usage: $0 model.gguf [command and options]"

@@ -313,21 +313,32 @@ void littlebit_set_log(littlebit_log_cb cb, void * user) {
     g_log_user = user;
 }
 
-// Heterogeneous CPUs (phones, watches): the cores within 80% of the fastest one's clock.
+// one value per CPU, or nothing if the file is missing for some CPU
+static std::vector<long> read_cpus(int32_t n, const char * file) {
+    std::vector<long> res;
+    for (int32_t i = 0; i < n; ++i) {
+        std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/" + file);
+        long v = 0;
+        if (!(f >> v) || v <= 0) {
+            return {};
+        }
+        res.push_back(v);
+    }
+    return res;
+}
+
+// Heterogeneous CPUs (phones, watches): the cores within 80% of the fastest. The kernel's capacity is preferred to the
+// clock because small and big cores can run at similar clocks.
 // Homogeneous CPUs: leave one core free from 4 cores up, two from 8 up - ggml's workers spin.
 int32_t littlebit_default_threads(void) {
     const int32_t n = std::max(1, (int32_t) std::thread::hardware_concurrency());
-    std::vector<long> freq;
-    for (int32_t i = 0; i < n; ++i) {
-        std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/cpufreq/cpuinfo_max_freq");
-        long v = 0;
-        if (f >> v && v > 0) {
-            freq.push_back(v);
+    for (const char * file : { "cpu_capacity", "cpufreq/cpuinfo_max_freq" }) {
+        const std::vector<long> speed = read_cpus(n, file);
+        if (speed.empty()) {
+            continue;
         }
-    }
-    if ((int32_t) freq.size() == n) {
-        const long top = *std::max_element(freq.begin(), freq.end());
-        const int32_t big = (int32_t) std::count_if(freq.begin(), freq.end(), [top](long v) { return v * 10 >= top * 8; });
+        const long top = *std::max_element(speed.begin(), speed.end());
+        const int32_t big = (int32_t) std::count_if(speed.begin(), speed.end(), [top](long v) { return v * 10 >= top * 8; });
         if (big < n) {
             return big;
         }

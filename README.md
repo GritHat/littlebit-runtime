@@ -4,8 +4,10 @@ A runtime for [LittleBit](https://github.com/SamsungLabs/LittleBit) language mod
 linear layers are compressed to between 0.1 and 1 bit per weight. It adds LittleBit layers to
 [llama.cpp](https://github.com/ggml-org/llama.cpp), and through it to [Ollama](https://github.com/ollama/ollama).
 
-**Tested on a phone:** an 8-billion-parameter model (Qwen3-8B at 0.55 bits per weight) runs at about 9 tokens/s on a
-Nothing Phone (4a) Pro, from a 1.43 GB file. See [the measurements](docs/DEVICES.md).
+**Tested on a phone and a watch.** Qwen3-8B at 0.55 bits per weight runs at about 9 tokens/s on a Nothing Phone (4a) Pro,
+from a 1.43 GB file. The same 8-billion-parameter model also runs on a Galaxy Watch Ultra 2, at 6 seconds per token
+because it does not fit in memory; an untrained 0.5-billion-parameter model, as a speed test, reaches
+42 tokens/s there. See [the measurements](docs/DEVICES.md).
 
 - `littlebit`, a command line tool: run, chat, benchmark, and serve an OpenAI-compatible API
 - `liblittlebit`, a shared library with a small [C API](include/littlebit.h) for embedding
@@ -13,9 +15,9 @@ Nothing Phone (4a) Pro, from a 1.43 GB file. See [the measurements](docs/DEVICES
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
 
-The same file decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
+The 8B file decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
 
-> **Status: early.** Tested on x86-64 CPUs and one Android phone. No GPU, watch or Apple device has been tried.
+> **Status: early.** Tested on x86-64 CPUs, an Android phone and a Wear OS watch. No GPU has been tried.
 > A LittleBit model comes from training, not conversion: see [Models](#models).
 
 ## Install
@@ -102,7 +104,7 @@ little for the trained Qwen3-8B, a lot for the untrained Gemma. No trained Littl
 
 **Test suite.** `ctest` checks tiny random models of all five architectures against their dense equivalents, every
 kernel, plain and repacked, against numpy, rejection of malformed files, the C API and the command line. It passes on
-x86-64 and natively on an ARM64 phone, with dotprod and with i8mm kernels. An earlier version of the suite also passed
+x86-64, on Linux and macOS ARM64 in CI, and natively on an Android phone and a Wear OS watch. An earlier version of the suite also passed
 under address and undefined-behaviour sanitizers.
 
 **Between machines.** Greedy output for a 48-token continuation was identical on the PC and the phone, but that is not
