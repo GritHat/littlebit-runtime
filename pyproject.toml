@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "littlebit-gguf"
+version = "0.1.0"
+description = "Convert LittleBit checkpoints to GGUF and plan their memory use"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Ignazio Crocchiolo" }]
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+convert = ["torch", "safetensors", "transformers", "sentencepiece", "protobuf", "tiktoken", "pyyaml", "tqdm", "requests"]
+test = ["pytest", "pyyaml", "tqdm", "requests"]
+
+[project.scripts]
+littlebit-convert = "littlebit_gguf.convert:main"
+littlebit-size = "littlebit_gguf.sizing:main"
+
+[tool.setuptools]
+packages = ["littlebit_gguf"]

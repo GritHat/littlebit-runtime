@@ -1,0 +1,105 @@
+cmake_minimum_required(VERSION 3.18)
+project(littlebit VERSION 0.1.0 LANGUAGES C CXX)
+
+set(LITTLEBIT_LLAMA_TAG    b12257)
+set(LITTLEBIT_LLAMA_COMMIT 17701e48d7fa3b7dac949cb9e5e6d241a382333c)
+
+option(LITTLEBIT_SERVER "Build llama-server (for 'littlebit serve') and llama-quantize" ON)
+option(LITTLEBIT_SHARED_LIB "Build the embeddable shared library" ON)
+option(LITTLEBIT_TESTS  "Build the tests" ON)
+set(LITTLEBIT_LLAMA_DIR "" CACHE PATH "Use this llama.cpp tree, already patched, instead of downloading one")
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# llama.cpp and ggml are always linked statically
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_NUMBER 12257 CACHE STRING "" FORCE)
+set(LLAMA_BUILD_COMMIT 17701e48 CACHE STRING "" FORCE)
+foreach(_opt TESTS EXAMPLES APP UI HTML)
+    set(LLAMA_BUILD_${_opt} OFF CACHE BOOL "" FORCE)
+endforeach()
+foreach(_opt COMMON TOOLS SERVER)
+    set(LLAMA_BUILD_${_opt} ${LITTLEBIT_SERVER} CACHE BOOL "" FORCE)
+endforeach()
+set(LLAMA_USE_PREBUILT_UI OFF CACHE BOOL "" FORCE)
+option(LLAMA_OPENSSL "llama.cpp: HTTPS support" OFF)
+
+if(LITTLEBIT_LLAMA_DIR)
+    if(NOT EXISTS "${LITTLEBIT_LLAMA_DIR}/src/llama-littlebit.cpp")
+        message(FATAL_ERROR "LITTLEBIT_LLAMA_DIR=${LITTLEBIT_LLAMA_DIR} does not contain the LittleBit patch")
+    endif()
+    set(llama_cpp_SOURCE_DIR ${LITTLEBIT_LLAMA_DIR})
+    add_subdirectory(${LITTLEBIT_LLAMA_DIR} llama.cpp EXCLUDE_FROM_ALL)
+else()
+    include(FetchContent)
+    set(FETCHCONTENT_QUIET OFF)
+    FetchContent_Declare(llama_cpp
+        URL https://github.com/ggml-org/llama.cpp/archive/${LITTLEBIT_LLAMA_COMMIT}.tar.gz
+        URL_HASH SHA256=0b29eaea174ea710d6b30e60cc998fa4ed5e2e36e75db3218382e2fca58bc35b
+        PATCH_COMMAND ${CMAKE_COMMAND}
+            -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/patches/llama.cpp/0001-littlebit-factorized-binary-linear.patch
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyPatch.cmake)
+    FetchContent_GetProperties(llama_cpp)
+    if(NOT llama_cpp_POPULATED)
+        FetchContent_Populate(llama_cpp)
+        add_subdirectory(${llama_cpp_SOURCE_DIR} ${llama_cpp_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
+endif()
+
+include(GNUInstallDirs)
+find_package(Threads REQUIRED)
+
+# littlebit-static backs the CLI; littlebit is a self-contained shared library exporting only the C API
+set(_libs littlebit-static)
+add_library(littlebit-static STATIC src/littlebit.cpp)
+if(LITTLEBIT_SHARED_LIB)
+    add_library(littlebit SHARED src/littlebit.cpp)
+    set_target_properties(littlebit PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION 0 PUBLIC_HEADER include/littlebit.h)
+    target_compile_definitions(littlebit PUBLIC LITTLEBIT_SHARED)
+    if(UNIX AND NOT APPLE)
+        target_link_options(littlebit PRIVATE -Wl,--exclude-libs,ALL
+            -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/littlebit.map)
+    endif()
+    list(APPEND _libs littlebit)
+endif()
+foreach(_l IN LISTS _libs)
+    target_include_directories(${_l} PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_link_libraries(${_l} PRIVATE llama ggml Threads::Threads)
+    target_compile_definitions(${_l} PRIVATE LITTLEBIT_VERSION="${PROJECT_VERSION}" LITTLEBIT_BUILD)
+    set_target_properties(${_l} PROPERTIES CXX_VISIBILITY_PRESET hidden)
+endforeach()
+
+add_executable(littlebit-cli src/main.cpp)
+set_target_properties(littlebit-cli PROPERTIES OUTPUT_NAME littlebit)
+target_link_libraries(littlebit-cli PRIVATE littlebit-static)
+
+if(NOT MSVC)
+    foreach(_t IN LISTS _libs ITEMS littlebit-cli)
+        target_compile_options(${_t} PRIVATE -Wall -Wextra)
+    endforeach()
+endif()
+
+set(_bins littlebit-cli)
+if(LITTLEBIT_SERVER)
+    add_custom_target(littlebit-tools ALL DEPENDS llama-server llama-quantize)
+    list(APPEND _bins llama-server llama-quantize)
+endif()
+install(TARGETS ${_bins} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(LITTLEBIT_SHARED_LIB)
+    install(TARGETS littlebit
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+
+if(LITTLEBIT_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

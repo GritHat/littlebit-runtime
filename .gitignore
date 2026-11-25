@@ -1,0 +1,10 @@
+build/
+build-*/
+dist/
+models/
+third_party/
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.gguf

@@ -1,0 +1,311 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 426c487..c3901cf 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -23,2 +23,3 @@ set(LLAMA_CORE_SOURCES
+     llama-io.cpp
++    llama-littlebit.cpp
+     llama-kv-cache.cpp
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 0f7d8ab..c965054 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -1692,3 +1692,5 @@ ggml_tensor * llm_graph_context::build_lora_mm(
+     ggml_tensor * cur_mm = build_hadamard_input(w, cur);
+-    ggml_tensor * res = ggml_mul_mat(ctx0, w, cur_mm);
++    // LittleBit: the weight is a proxy for a factorized binary layer
++    const llama_littlebit_linear * lb = model.littlebit.find(w);
++    ggml_tensor * res = lb ? llama_littlebit_mul_mat(ctx0, *lb, cur_mm) : ggml_mul_mat(ctx0, w, cur_mm);
+ 
+diff --git a/src/llama-littlebit.cpp b/src/llama-littlebit.cpp
+new file mode 100644
+index 0000000..b822cfb
+--- /dev/null
++++ b/src/llama-littlebit.cpp
+@@ -0,0 +1,71 @@
++#include "llama-littlebit.h"
++
++#include <stdexcept>
++#include <string>
++
++ggml_tensor * llama_littlebit::new_proxy(const char * name, int64_t n_in, int64_t n_out, int64_t n_max) {
++    if (!ctx_proxy) {
++        n_proxy_max = n_max > 0 ? n_max : 1024;
++        ggml_init_params params = {
++            /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) n_proxy_max,
++            /*.mem_buffer =*/ nullptr,
++            /*.no_alloc   =*/ true,
++        };
++        ctx_proxy.reset(ggml_init(params));
++        if (!ctx_proxy) {
++            throw std::runtime_error("littlebit: failed to create proxy context");
++        }
++    }
++    if ((int64_t) layers.size() >= n_proxy_max) {
++        throw std::runtime_error("littlebit: too many factorized layers");
++    }
++
++    // F32 so that the shape is always valid; the tensor is never allocated nor computed
++    ggml_tensor * t = ggml_new_tensor_2d(ctx_proxy.get(), GGML_TYPE_F32, n_in, n_out);
++    ggml_set_name(t, name);
++    return t;
++}
++
++size_t llama_littlebit::nbytes() const {
++    size_t n = 0;
++    for (const auto & it : layers) {
++        const auto & lb = it.second;
++        for (const ggml_tensor * t : { lb.v2, lb.v, lb.v2_r, lb.v_r, lb.u }) {
++            if (t) {
++                n += ggml_nbytes(t);
++            }
++        }
++    }
++    return n;
++}
++
++// latent activations h = V_b (v2 * x), zero-padded to r_pad
++static ggml_tensor * llama_littlebit_branch(
++        ggml_context * ctx,
++        ggml_tensor  * v2,
++        ggml_tensor  * v,
++        ggml_tensor  * x,
++        int64_t n_in, int64_t in_pad, int64_t r, int64_t r_pad) {
++    ggml_tensor * h = ggml_mul(ctx, x, v2);
++    if (in_pad > n_in) {
++        h = ggml_pad(ctx, h, (int) (in_pad - n_in), 0, 0, 0);
++    }
++    h = ggml_mul_mat(ctx, v, h); // [r, ...] (per-row scale v1*u2 is folded into the Q1_0 block scales)
++    if (r_pad > r) {
++        h = ggml_pad(ctx, h, (int) (r_pad - r), 0, 0, 0);
++    }
++    return h;
++}
++
++ggml_tensor * llama_littlebit_mul_mat(ggml_context * ctx, const llama_littlebit_linear & lb, ggml_tensor * x) {
++    GGML_ASSERT(x->ne[0] == lb.n_in);
++
++    ggml_tensor * h = llama_littlebit_branch(ctx, lb.v2, lb.v, x, lb.n_in, lb.in_pad, lb.r, lb.r_pad);
++    if (lb.residual()) {
++        ggml_tensor * h_r = llama_littlebit_branch(ctx, lb.v2_r, lb.v_r, x, lb.n_in, lb.in_pad, lb.r, lb.r_pad);
++        h = ggml_concat(ctx, h, h_r, 0); // [2*r_pad, ...] matches the [U | U_R] layout of lb.u
++    }
++
++    // y = U_b h, per-output-row scale u1 (and u1_R) folded into the Q1_0 block scales
++    return ggml_mul_mat(ctx, lb.u, h);
++}
+diff --git a/src/llama-littlebit.h b/src/llama-littlebit.h
+new file mode 100644
+index 0000000..5dcbca4
+--- /dev/null
++++ b/src/llama-littlebit.h
+@@ -0,0 +1,78 @@
++#pragma once
++
++// LittleBit / LittleBit-2 factorized binary linear layers
++//   ref: https://github.com/SamsungLabs/LittleBit (arXiv:2506.13771, arXiv:2603.00042)
++//
++// A LittleBit linear layer replaces a dense weight W [out x in] with
++//
++//     y = u1 * ( U_b ( (v1*u2) * ( V_b ( v2 * x ) ) ) )            (+ an optional residual branch)
++//
++// where U_b [out x r] and V_b [r x in] are {-1,+1} matrices and u1, u2, v1, v2 are per-channel scales.
++//
++// In GGUF a LittleBit layer named `<base>.weight` is stored as (no dense `<base>.weight` tensor):
++//
++//   <base>.lb_v2    F32  [in]                 input channel scale v2
++//   <base>.lb_v     Q1_0 [in_pad, r]          sign(V), block scale d = v1*u2 (per latent row)
++//   <base>.lb_v2_r  F32  [in]                 (residual only)
++//   <base>.lb_v_r   Q1_0 [in_pad, r]          (residual only)
++//   <base>.lb_u     Q1_0 [n_br*r_pad, out]    [sign(U) | sign(U_R)], block scale d = u1 (resp. u1_R) per output row
++//
++// in_pad and r_pad are rounded up to the Q1_0 block size (128). The padded activations are zero, so the
++// padding is exact. The factors may also be stored as F16/F32, which avoids the 8-bit activation
++// quantization that Q1_0 matmuls perform on the CPU (used as a reference in tests).
++
++#include "ggml.h"
++
++#include <cstdint>
++#include <memory>
++#include <unordered_map>
++
++struct llama_littlebit_linear {
++    ggml_tensor * v2   = nullptr; // [in]
++    ggml_tensor * v    = nullptr; // [in_pad, r]
++    ggml_tensor * v2_r = nullptr; // [in]           (residual)
++    ggml_tensor * v_r  = nullptr; // [in_pad, r]    (residual)
++    ggml_tensor * u    = nullptr; // [n_br*r_pad, out]
++
++    int64_t n_in   = 0;
++    int64_t n_out  = 0;
++    int64_t in_pad = 0;
++    int64_t r      = 0;
++    int64_t r_pad  = 0;
++
++    bool residual() const { return v_r != nullptr; }
++};
++
++struct llama_littlebit_ctx_deleter {
++    void operator()(ggml_context * ctx) const { if (ctx) { ggml_free(ctx); } }
++};
++
++struct llama_littlebit {
++    // dense-weight proxy tensor -> factorized layer
++    // the proxy carries the logical shape [in, out] of the replaced weight but owns no data;
++    // build_lora_mm() dispatches on it and never feeds it to a real ggml op
++    std::unordered_map<const ggml_tensor *, llama_littlebit_linear> layers;
++
++    // metadata-only context that owns the proxy tensors
++    std::unique_ptr<ggml_context, llama_littlebit_ctx_deleter> ctx_proxy;
++    int64_t n_proxy_max = 0;
++
++    bool empty() const { return layers.empty(); }
++
++    const llama_littlebit_linear * find(const ggml_tensor * w) const {
++        if (layers.empty() || w == nullptr) {
++            return nullptr;
++        }
++        const auto it = layers.find(w);
++        return it == layers.end() ? nullptr : &it->second;
++    }
++
++    // create a data-less proxy tensor standing in for the dense weight `name` of shape [n_in, n_out]
++    ggml_tensor * new_proxy(const char * name, int64_t n_in, int64_t n_out, int64_t n_max);
++
++    // total bytes used by the factorized weights (for logging)
++    size_t nbytes() const;
++};
++
++// y = W x for a LittleBit layer; x: [n_in, ...] -> y: [n_out, ...]
++ggml_tensor * llama_littlebit_mul_mat(ggml_context * ctx, const llama_littlebit_linear & lb, ggml_tensor * x);
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 2cbee61..f568d2b 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1290,2 +1290,4 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+             op = GGML_OP_MUL_MAT_ID;
++        } else if (tn.suffix != nullptr && strncmp(tn.suffix, "lb_v2", 5) == 0) {
++            op = GGML_OP_MUL; // LittleBit input scales
+         } else {
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index dbc91a1..3cf8468 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -29,2 +29,3 @@
+ #include <cassert>
++#include <cinttypes>
+ #include <cfloat>
+@@ -2148,2 +2149,7 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
+ 
++    if (!littlebit.empty()) {
++        LLAMA_LOG_INFO("%s: LittleBit: %zu factorized binary linear layers, %.2f MiB\n",
++                __func__, littlebit.layers.size(), littlebit.nbytes()/1024.0/1024.0);
++    }
++
+     return true;
+@@ -2488,5 +2494,88 @@ ggml_tensor * llama_model_base::create_tensor(llama_model_loader & ml, const LLM
+     }
+-    return ml.create_tensor(
+-        hparams, &pimpl->cpu_buft_list, pimpl->dev_input.buft_list, pimpl->dev_output.buft_list, buft_list_layer,
+-        tn, ne, flags);
++    auto create = [&](const LLM_TN_IMPL & tn_, const std::initializer_list<int64_t> & ne_, int flags_) {
++        return ml.create_tensor(
++            hparams, &pimpl->cpu_buft_list, pimpl->dev_input.buft_list, pimpl->dev_output.buft_list, buft_list_layer,
++            tn_, ne_, flags_);
++    };
++
++    // LittleBit: a dense 2D weight may be stored as binary latent factors (see llama-littlebit.h)
++    if (tn.suffix != nullptr && strcmp(tn.suffix, "weight") == 0 && ne.size() == 2) {
++        const std::string base = LLM_TN_IMPL(tn.arch, tn.tensor, nullptr, tn.bid, tn.xid).str();
++        const ggml_tensor * meta_u = ml.get_tensor_meta((base + ".lb_u").c_str());
++        if (meta_u != nullptr) {
++            // the graph of these architectures only uses layer weights through build_lora_mm()
++            switch (arch) {
++                case LLM_ARCH_LLAMA:
++                case LLM_ARCH_QWEN2:
++                case LLM_ARCH_QWEN3:
++                case LLM_ARCH_GEMMA2:
++                case LLM_ARCH_GEMMA3:
++                    break;
++                default:
++                    throw std::runtime_error(format("littlebit: architecture '%s' is not supported", llm_arch_name(arch)));
++            }
++
++            uint32_t version = 0;
++            ml.get_key(std::string("littlebit.version"), version);
++            if (version != 1) {
++                throw std::runtime_error(format("littlebit: unsupported format version %u", version));
++            }
++
++            if (ml.get_tensor_meta(tn.str().c_str()) != nullptr) {
++                throw std::runtime_error(format("littlebit: tensor '%s' has both dense and factorized weights", tn.str().c_str()));
++            }
++            const int64_t n_in  = ne.begin()[0];
++            const int64_t n_out = ne.begin()[1];
++
++            const ggml_tensor * meta_v  = ml.require_tensor_meta(base + ".lb_v");
++            const bool          has_res = ml.get_tensor_meta((base + ".lb_v_r").c_str()) != nullptr;
++            const int64_t       n_br    = has_res ? 2 : 1;
++
++            llama_littlebit_linear lb;
++            lb.n_in   = n_in;
++            lb.n_out  = n_out;
++            lb.in_pad = meta_v->ne[0];
++            lb.r      = meta_v->ne[1];
++            lb.r_pad  = meta_u->ne[0] / n_br;
++
++            if (meta_u->ne[1] != n_out || meta_u->ne[0] % n_br != 0 || lb.in_pad < n_in || lb.r_pad < lb.r || lb.in_pad > INT32_MAX || lb.r_pad > INT32_MAX/2) {
++                throw std::runtime_error(format("littlebit: inconsistent factor shapes for '%s' (in=%" PRId64 ", out=%" PRId64
++                            ", lb_v=[%" PRId64 ", %" PRId64 "], lb_u=[%" PRId64 ", %" PRId64 "])",
++                            tn.str().c_str(), n_in, n_out, meta_v->ne[0], meta_v->ne[1], meta_u->ne[0], meta_u->ne[1]));
++            }
++
++            for (const char * sfx : { ".lb_v", ".lb_u", ".lb_v_r" }) {
++                const ggml_tensor * meta = ml.get_tensor_meta((base + sfx).c_str());
++                if (meta && meta->type != GGML_TYPE_Q1_0 && meta->type != GGML_TYPE_F16 && meta->type != GGML_TYPE_F32) {
++                    throw std::runtime_error(format("littlebit: unsupported type %s for tensor '%s%s'",
++                                ggml_type_name(meta->type), base.c_str(), sfx));
++                }
++            }
++
++            const LLM_TN_IMPL tn_v2 (tn.arch, tn.tensor, "lb_v2",   tn.bid, tn.xid);
++            const LLM_TN_IMPL tn_v  (tn.arch, tn.tensor, "lb_v",    tn.bid, tn.xid);
++            const LLM_TN_IMPL tn_v2r(tn.arch, tn.tensor, "lb_v2_r", tn.bid, tn.xid);
++            const LLM_TN_IMPL tn_vr (tn.arch, tn.tensor, "lb_v_r",  tn.bid, tn.xid);
++            const LLM_TN_IMPL tn_u  (tn.arch, tn.tensor, "lb_u",    tn.bid, tn.xid);
++
++            const int fl = flags & ~TENSOR_NOT_REQUIRED; // once the factors exist, all of them are required
++            lb.v2 = create(tn_v2, { n_in },              fl);
++            lb.v  = create(tn_v,  { lb.in_pad, lb.r },   fl);
++            if (has_res) {
++                lb.v2_r = create(tn_v2r, { n_in },            fl);
++                lb.v_r  = create(tn_vr,  { lb.in_pad, lb.r }, fl);
++            }
++            lb.u  = create(tn_u, { n_br*lb.r_pad, n_out }, fl);
++
++            if (lb.u == nullptr) {
++                return nullptr; // skipped (e.g. TENSOR_SKIP)
++            }
++
++            ggml_tensor * proxy = littlebit.new_proxy(tn.str().c_str(), n_in, n_out, ml.n_tensors + 16);
++            littlebit.layers.emplace(proxy, lb);
++            return proxy;
++        }
++    }
++
++    return create(tn, ne, flags);
+ }
+diff --git a/src/llama-model.h b/src/llama-model.h
+index 9c0a51f..e252f99 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -6,2 +6,3 @@
+ #include "llama-hparams.h"
++#include "llama-littlebit.h"
+ #include "llama-memory.h"
+@@ -779,2 +780,5 @@ struct llama_model {
+ 
++    // LittleBit factorized binary linear layers (dense-weight proxy -> factors)
++    llama_littlebit littlebit;
++
+     // see llama_model_set_attn_rot

@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it, and the LittleBit papers it implements.
+title: "LittleBitOllama: a llama.cpp and Ollama runtime for LittleBit models"
+type: software
+version: 0.1.0
+date-released: 2026-11-25
+license: Apache-2.0
+authors:
+  - given-names: Ignazio
+    family-names: Crocchiolo
+    alias: GritHat
