@@ -4,14 +4,16 @@ A runtime for [LittleBit](https://github.com/SamsungLabs/LittleBit) language mod
 linear layers are compressed to between 0.1 and 1 bit per weight. It adds LittleBit layers to
 [llama.cpp](https://github.com/ggml-org/llama.cpp), and through it to [Ollama](https://github.com/ollama/ollama).
 
+**Tested on a phone:** an 8-billion-parameter model (Qwen3-8B at 0.55 bits per weight) runs at about 9 tokens/s on a
+Nothing Phone (4a) Pro, from a 1.43 GB file. See [the measurements](docs/DEVICES.md).
+
 - `littlebit`, a command line tool: run, chat, benchmark, and serve an OpenAI-compatible API
 - `liblittlebit`, a shared library with a small [C API](include/littlebit.h) for embedding
 - `littlebit-convert`, which turns LittleBit checkpoints into GGUF
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
 
-Qwen3-8B at 0.55 bits per weight becomes a 1.43 GB file and decodes at 18 to 20 tokens/s on a 2018 desktop CPU and 9
-tokens/s on a Nothing Phone (4a) Pro.
+The same file decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
 
 > **Status: early.** Tested on x86-64 CPUs and one Android phone. No GPU, watch or Apple device has been tried.
 > A LittleBit model comes from training, not conversion: see [Models](#models).
