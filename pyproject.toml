@@ -18,6 +18,7 @@ test = ["pytest", "pyyaml", "tqdm", "requests"]
 
 [project.scripts]
 littlebit-convert = "littlebit_gguf.convert:main"
+littlebit-ncm-convert = "littlebit_gguf.ncm:main"
 littlebit-size = "littlebit_gguf.sizing:main"
 
 [tool.setuptools]

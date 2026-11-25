@@ -58,9 +58,9 @@ find_package(Threads REQUIRED)
 
 # littlebit-static backs the CLI; littlebit is a self-contained shared library exporting only the C API
 set(_libs littlebit-static)
-add_library(littlebit-static STATIC src/littlebit.cpp)
+add_library(littlebit-static STATIC src/littlebit.cpp src/ncm.cpp)
 if(LITTLEBIT_SHARED_LIB)
-    add_library(littlebit SHARED src/littlebit.cpp)
+    add_library(littlebit SHARED src/littlebit.cpp src/ncm.cpp)
     set_target_properties(littlebit PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION 0 PUBLIC_HEADER include/littlebit.h)
     target_compile_definitions(littlebit PUBLIC LITTLEBIT_SHARED)
     if(UNIX AND NOT APPLE)
@@ -72,6 +72,7 @@ endif()
 foreach(_l IN LISTS _libs)
     target_include_directories(${_l} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_include_directories(${_l} PRIVATE ${llama_cpp_SOURCE_DIR}/src)  # llama-littlebit.h
     target_link_libraries(${_l} PRIVATE llama ggml Threads::Threads)
     target_compile_definitions(${_l} PRIVATE LITTLEBIT_VERSION="${PROJECT_VERSION}" LITTLEBIT_BUILD)
     set_target_properties(${_l} PROPERTIES CXX_VISIBILITY_PRESET hidden)

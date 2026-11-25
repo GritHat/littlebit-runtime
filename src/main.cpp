@@ -1,6 +1,7 @@
 // littlebit: command line front end of the LittleBit runtime.
 #include "littlebit.h"
 
+#include <cctype>
 #include <cerrno>
 #include <climits>
 #include <cstdio>
@@ -27,6 +28,7 @@ const char * USAGE =
     "  bench   measure prompt and decode speed\n"
     "  info    show model information\n"
     "  logits  dump logits of given token ids    (--tokens 1,2,3 --out FILE)\n"
+    "  ncm     Next-Concept model: solve sudokus (-p PUZZLE, or one per line on stdin) or sample text\n"
     "  serve   OpenAI-compatible HTTP server     (extra options go to llama-server)\n"
     "  version\n"
     "\n"
@@ -46,7 +48,7 @@ const char * USAGE =
 
 struct options {
     std::string cmd, model, prompt, system, tokens, out;
-    bool has_prompt = false, verbose = false, has_threads = false, has_ctx = false;
+    bool has_prompt = false, verbose = false, has_threads = false, has_ctx = false, has_temp = false, has_top_k = false, has_top_p = false;
     littlebit_model_params   mp = littlebit_default_model_params();
     littlebit_session_params sp = littlebit_default_session_params();
     littlebit_gen_params     gp = littlebit_default_gen_params();
@@ -96,9 +98,9 @@ options parse(const std::vector<std::string> & args) {
         else if (a == "-c" || a == "--ctx")        { o.sp.n_ctx = (int32_t) to_int(val(), "-c", 1, INT_MAX); o.has_ctx = true; }
         else if (a == "-b" || a == "--batch")      { o.sp.n_batch = (int32_t) to_int(val(), "-b", 1, INT_MAX); }
         else if (a == "-t" || a == "--threads")    { o.sp.n_threads = (int32_t) to_int(val(), "-t", 1, 512); o.has_threads = true; }
-        else if (a == "--temp")                    { o.gp.temperature = to_float(val(), "--temp"); }
-        else if (a == "--top-k")                   { o.gp.top_k = (int32_t) to_int(val(), "--top-k", 0, INT_MAX); }
-        else if (a == "--top-p")                   { o.gp.top_p = to_float(val(), "--top-p"); }
+        else if (a == "--temp")                    { o.gp.temperature = to_float(val(), "--temp"); o.has_temp = true; }
+        else if (a == "--top-k")                   { o.gp.top_k = (int32_t) to_int(val(), "--top-k", 0, INT_MAX); o.has_top_k = true; }
+        else if (a == "--top-p")                   { o.gp.top_p = to_float(val(), "--top-p"); o.has_top_p = true; }
         else if (a == "--seed")                    { o.gp.seed = (uint32_t) to_int(val(), "--seed", 0, UINT_MAX); }
         else if (a == "--system")                  { o.system = val(); }
         else if (a == "--tokens")                  { o.tokens = val(); }
@@ -263,17 +265,112 @@ int cmd_bench(options & o) {
     return 0;
 }
 
+std::vector<int32_t> parse_tokens(const std::string & s) {
+    std::vector<int32_t> toks;
+    size_t pos = 0;
+    while (pos <= s.size()) {
+        const size_t next = std::min(s.find(',', pos), s.size());
+        toks.push_back((int32_t) to_int(s.substr(pos, next - pos), "--tokens", 0, INT_MAX));
+        pos = next + 1;
+    }
+    return toks;
+}
+
+int cmd_ncm(options & o) {
+    littlebit_set_log([](int level, const char * t, void *) { if (level == 4) { fputs(t, stderr); } }, nullptr);
+    littlebit_ncm_params np = littlebit_default_ncm_params();
+    np.n_threads = o.sp.n_threads;
+    np.repack    = o.mp.repack;
+    struct holder {
+        littlebit_ncm * m = nullptr;
+        ~holder() { littlebit_ncm_free(m); }
+    } h;
+    if (!(h.m = littlebit_ncm_load(o.model.c_str(), &np))) {
+        die_api("cannot load model");
+    }
+    littlebit_ncm_info info;
+    littlebit_ncm_get_info(h.m, &info);
+    littlebit_ncm_gen_params gp = littlebit_default_ncm_gen_params();
+    gp.seed = o.gp.seed;
+    if (o.has_temp)  { gp.temperature = o.gp.temperature; }
+    if (o.has_top_k) { gp.top_k = o.gp.top_k; }
+    if (o.has_top_p) { gp.top_p = o.gp.top_p; }
+    fprintf(stderr, "[NCM, %d layers, %d LittleBit, %.1f MB, %d threads]\n", info.n_layers, info.n_littlebit,
+            info.size_bytes / 1e6, info.n_threads);
+    int n = 0;
+    double ms = 0;
+    auto count = [&] {
+        const littlebit_stats st = littlebit_ncm_stats(h.m);
+        ms += st.prompt_ms + st.generate_ms;
+        ++n;
+    };
+    if (!o.tokens.empty()) { // raw tokens in and out, and all logits
+        const std::vector<int32_t> toks = parse_tokens(o.tokens);
+        std::vector<int32_t> out((size_t) info.n_output);
+        std::vector<float> logits;
+        auto trace = [](int32_t, const float * x, size_t len, void * u) {
+            auto * v = (std::vector<float> *) u;
+            v->insert(v->end(), x, x + len);
+        };
+        if (littlebit_ncm_generate(h.m, toks.data(), (int32_t) toks.size(), &gp, out.data(), info.n_output, trace, &logits) < 0) {
+            die_api("generation failed");
+        }
+        for (size_t i = 0; i < out.size(); ++i) {
+            printf("%s%d", i ? "," : "", out[i]);
+        }
+        printf("\n");
+        if (!o.out.empty()) {
+            FILE * f = fopen(o.out.c_str(), "wb");
+            if (!f) {
+                die("cannot open " + o.out);
+            }
+            const bool ok = fwrite(logits.data(), sizeof(float), logits.size(), f) == logits.size();
+            if (fclose(f) != 0 || !ok) {
+                die("cannot write " + o.out);
+            }
+        }
+        count();
+    } else if (info.sudoku) {
+        auto solve = [&](const std::string & line) {
+            char sol[82];
+            if (littlebit_ncm_sudoku(h.m, line.c_str(), sol) != 0) {
+                die_api("cannot solve");
+            }
+            printf("%s\n", sol);
+            fflush(stdout);
+            count();
+        };
+        std::string line;
+        if (o.has_prompt) {
+            solve(o.prompt);
+        } else {
+            while (std::getline(std::cin, line)) {
+                while (!line.empty() && isspace((unsigned char) line.back())) {
+                    line.pop_back();
+                }
+                if (!line.empty()) {
+                    solve(line);
+                }
+            }
+        }
+    } else {
+        if (littlebit_ncm_text(h.m, &gp, print_text, nullptr) != 0) {
+            die_api("generation failed");
+        }
+        printf("\n");
+        count();
+    }
+    if (n) {
+        fprintf(stderr, "[%d generated, %.1f ms each]\n", n, ms / n);
+    }
+    return 0;
+}
+
 int cmd_logits(options & o) {
     if (o.tokens.empty() || o.out.empty()) {
         die("logits needs --tokens and --out");
     }
-    std::vector<int32_t> toks;
-    size_t pos = 0;
-    while (pos <= o.tokens.size()) {
-        const size_t next = std::min(o.tokens.find(',', pos), o.tokens.size());
-        toks.push_back((int32_t) to_int(o.tokens.substr(pos, next - pos), "--tokens", 0, INT_MAX));
-        pos = next + 1;
-    }
+    const std::vector<int32_t> toks = parse_tokens(o.tokens);
     if (!o.has_ctx) {
         o.sp.n_ctx = std::max<int32_t>(o.sp.n_ctx, (int32_t) toks.size());
     }
@@ -351,13 +448,15 @@ int main(int argc, char ** argv) {
     if (args[0] == "serve") {
         return cmd_serve(args);
     }
-    if (args[0] != "run" && args[0] != "chat" && args[0] != "info" && args[0] != "bench" && args[0] != "logits") {
+    if (args[0] != "run" && args[0] != "chat" && args[0] != "info" && args[0] != "bench" && args[0] != "logits" &&
+        args[0] != "ncm") {
         die("unknown command '" + args[0] + "'\n\n" + USAGE);
     }
     options o = parse(args);
     if (o.cmd == "run")  { return cmd_run(o); }
     if (o.cmd == "chat") { return cmd_chat(o); }
     if (o.cmd == "info") { return cmd_info(o); }
+    if (o.cmd == "ncm")  { return cmd_ncm(o); }
     if (o.cmd == "bench") { return cmd_bench(o); }
     return cmd_logits(o);
 }

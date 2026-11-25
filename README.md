@@ -14,6 +14,7 @@ because it does not fit in memory; an untrained 0.5-billion-parameter model, as 
 - `littlebit-convert`, which turns LittleBit checkpoints into GGUF
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
+- an engine for [Next-Concept models](docs/NCM.md) (Sudoku and TinyStories), dense or with LittleBit layers
 
 The 8B file decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
 

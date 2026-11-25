@@ -1,4 +1,5 @@
 #include "littlebit.h"
+#include "internal.h"
 
 #include "ggml-backend.h"
 #include "llama.h"
@@ -128,6 +129,9 @@ double now_ms() {
 }
 
 } // namespace
+
+void littlebit_internal::init() { init_once(); }
+void littlebit_internal::set_error(const std::string & what) { g_error = what; }
 
 struct littlebit_model {
     std::unique_ptr<llama_model, model_deleter> model;
