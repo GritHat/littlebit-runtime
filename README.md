@@ -15,6 +15,11 @@ solves Sudoku puzzles on the watch in about half a second each, in a [small Wear
 96 % of the easy test puzzles, against 99.6 % for the 31 MB original. As far as we know, LittleBit had not been applied
 to Next-Concept models before.
 
+<a href="https://youtu.be/ffFUKMKZsqk"><img src="docs/media/watch-sudoku.gif" width="320"
+alt="A Galaxy Watch Ultra 2 solving Sudoku puzzles with a 6.8 MB LittleBit model, about half a second each"></a>
+
+[Full video](https://youtu.be/ffFUKMKZsqk): the 6.8 MB model, then the 31 MB original for comparison.
+
 - `littlebit`, a command line tool: run, chat, benchmark, and serve an OpenAI-compatible API
 - `liblittlebit`, a shared library with a small [C API](include) for embedding
 - `littlebit-convert`, which turns LittleBit checkpoints into GGUF
