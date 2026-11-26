@@ -104,6 +104,8 @@ On x86-64, where nothing is repacked, the same file peaks at 1.53 GB resident wi
 
 ## Build and run
 
+A Wear OS app that runs a Sudoku model on the watch is in [examples/wear-sudoku](../examples/wear-sudoku).
+
 ```
 ANDROID_NDK=/path/to/android-ndk scripts/build_android.sh
 scripts/deploy_android.sh model.gguf                       # benchmark

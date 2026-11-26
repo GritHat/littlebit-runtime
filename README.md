@@ -10,12 +10,18 @@ from a 1.43 GB file. The same 8-billion-parameter model also runs on a Galaxy Wa
 because it does not fit in memory; a Qwen3-0.6B trained here at 0.55 bits per weight, a 127 MB file, runs there at
 32 tokens/s, but writes no correct facts. See [the measurements](docs/DEVICES.md).
 
+**Sudoku on a watch.** A [Next-Concept model](docs/NCM.md) with LittleBit layers at 0.55 bits per weight, a 6.8 MB file,
+solves Sudoku puzzles on the watch in about half a second each, in a [small Wear OS app](examples/wear-sudoku). It solves
+96 % of the easy test puzzles, against 99.6 % for the 31 MB original. As far as we know, LittleBit had not been applied
+to Next-Concept models before.
+
 - `littlebit`, a command line tool: run, chat, benchmark, and serve an OpenAI-compatible API
 - `liblittlebit`, a shared library with a small [C API](include) for embedding
 - `littlebit-convert`, which turns LittleBit checkpoints into GGUF
 - `littlebit-size`, which estimates what fits on a device
 - scripts to build it for Android and into Ollama
 - `littlebit ncm` and `littlebit-ncm-convert`, for Next-Concept models (Sudoku and TinyStories), dense or with LittleBit layers
+- a minimal [Wear OS app](examples/wear-sudoku) that solves Sudoku puzzles on the watch
 
 The 8B file decodes at 18 to 20 tokens/s on a 2018 desktop CPU.
 
