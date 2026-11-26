@@ -7,8 +7,8 @@ and one for [Next-Concept models](docs/NCM.md). An independent project, not affi
 
 **Tested on a phone and a watch.** Qwen3-8B at 0.55 bits per weight runs at about 9 tokens/s on a Nothing Phone (4a) Pro,
 from a 1.43 GB file. The same 8-billion-parameter model also runs on a Galaxy Watch Ultra 2, at 6 seconds per token
-because it does not fit in memory; an untrained 0.5-billion-parameter model, as a speed test, reaches
-42 tokens/s there. See [the measurements](docs/DEVICES.md).
+because it does not fit in memory; a Qwen3-0.6B trained here at 0.55 bits per weight, a 127 MB file, runs there at
+32 tokens/s, but writes no correct facts. See [the measurements](docs/DEVICES.md).
 
 - `littlebit`, a command line tool: run, chat, benchmark, and serve an OpenAI-compatible API
 - `liblittlebit`, a shared library with a small [C API](include) for embedding

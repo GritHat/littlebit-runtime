@@ -29,19 +29,53 @@ for devices with very little memory.
 
 | model | threads | prompt, tok/s | decode, tok/s |
 |---|---|---|---|
+| Qwen3-0.6B, trained, 0.55 bpw, 127 MB, 64-bit | 1 (default) | 95 | 32 |
+| same | 4 | 72 to 104 | 32 |
+| same | 5 | 72 to 88 | 9 to 22 |
+| same, `--no-repack` | 1 | 20 | 15 |
 | Qwen2.5-0.5B shape, 110 MB, 64-bit | 1 (default) | 131 | 42 |
 | same, `--no-repack` | 1 | 26 | 17 |
 | same, 32-bit build | 1 | 8 | 3.7 |
 | same, 32-bit build | 4 | 15 | 6.7 |
 | Qwen3-8B, 1.27 GB, `--no-repack` | 5 | 0.35 | 0.16 |
 
-The small model is an untrained initialization: its speed is real, its text is not. A 400-token run sustained 39.6 tok/s.
+The Qwen3-0.6B rows are three runs each of 128 + 64 tokens (one for `--no-repack`). A 400-token run sustained 29.8 tok/s.
+It peaked at 531 MB resident, 405 MB of it anonymous, with 327 MB reported available before the run, and its greedy
+output for a 40-token prompt matched the PC's. The model is described under [Training a small model](#training-a-small-model).
+
+The Qwen2.5-0.5B-shaped model is an untrained initialization: its speed is real, its text is not. A 400-token run sustained 39.6 tok/s.
 The 8B continued a prompt correctly (12 tokens) with less than 0.1 GB of anonymous memory, but each token reads
 870 MB of weights and only about 0.6 GB could be cached, so it is limited by the storage (roughly 170 MB/s). For usable
 speed the weights read per token must fit in free memory. No published trained LittleBit model of that size was found.
 
 The battery stayed below 34 degrees C throughout, on the charger. It suspends running programs when the screen turns off, which stalls a
 run started over adb.
+
+## Training a small model
+
+Qwen3-0.6B was trained at 0.55 bits per weight with `tools/llm/train.py` on one rented RTX 4090:
+
+```
+python tools/llm/train.py --littlebit LittleBit --out out --eff-bit 0.55 --steps 20000 --docs 400000
+```
+
+20,000 steps of 2 × 2048 tokens (164 million tokens of C4 and wikitext-2 train) took 8 hours; the rented machine ran for
+8.6 hours at $0.89 per hour, setup and a pilot included.
+
+| | wikitext-2 test perplexity |
+|---|---|
+| Qwen3-0.6B, bf16 | 20.97 |
+| LittleBit 0.55 bpw, PyTorch | 54.79 |
+| same, 8 × 512 tokens: PyTorch / this runtime / with Q4_K embedding and Q6_K lm_head | 70.08 / 70.11 / 72.55 |
+
+The 196 LittleBit layers take 36.9 MiB (0.70 bpw as stored); the file is 127 MB, most of it the embedding and lm_head
+of the 151,936-token vocabulary. The runtime matches PyTorch to a KL divergence of 0.0004 per token (98.4 % same top
+token) with a bf16 embedding and lm_head, 0.021 (89.5 %) with the quantized ones.
+
+The model writes English sentences but no correct facts: greedy decoding repeats itself ("The capital of France is a
+country that is a country that is ..."), sampling does not, and neither answers questions. It is a measure of speed and
+memory, not a usable model. [mgiachetti/little-bit](https://github.com/mgiachetti/little-bit) reports 36.4 for the same
+model and rate after 107 million tokens, with a distillation loss adapted to Qwen3's attention sinks.
 
 ## What fits
 

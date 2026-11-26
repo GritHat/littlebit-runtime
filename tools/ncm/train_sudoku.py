@@ -31,6 +31,9 @@ ap.add_argument("--lr", type=float, default=2e-4)
 ap.add_argument("--mse", type=float, default=1.0)
 ap.add_argument("--eval-every", type=int, default=500)
 ap.add_argument("--base-grids", type=int, default=20000)
+ap.add_argument("--val", type=int, default=0, help="held-out puzzles, generated like the training ones, to tune on instead of the test set")
+ap.add_argument("--resume", action="store_true", help="continue from state.pt in --out")
+ap.add_argument("--state-every", type=int, default=0, help="steps between writes of state.pt")
 ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--out", type=Path, required=True)
 args = ap.parse_args()
@@ -205,7 +208,14 @@ log(event="teacher", difficulty=args.difficulty, solved=solved(runtime, teacher,
 grids = torch.tensor(base_grids(), device=DEV)
 test_set = {tuple(r) for r in sols.tolist()}
 assert not any(tuple(r) in test_set for r in tokens(grids, torch.zeros_like(grids, dtype=torch.bool))[1].tolist())
-log(event="grids", n=len(grids))
+val = None
+if args.val:
+    held, grids = grids[:args.val], grids[args.val:]
+    g = torch.Generator(device=DEV).manual_seed(12345)
+    blank = torch.zeros_like(held, dtype=torch.bool)
+    blank.scatter_(1, torch.rand(held.shape, device=DEV, generator=g).argsort(1)[:, :BLANKS], True)
+    val = tokens(held, blank)
+log(event="grids", n=len(grids), val=args.val)
 
 student = littlebit_student(teacher) if args.eff_bit > 0 else copy.deepcopy(teacher)
 student.requires_grad_(True)
@@ -234,7 +244,19 @@ params = [p for p in student.parameters() if p.requires_grad]
 opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=0.0)
 student.eval()  # no dropout: the targets are the teacher's deterministic outputs
 best = (-1.0, 0)
-for step in range(1, args.steps + 1):
+start = 0
+state_file = args.out / "state.pt"
+if args.resume and state_file.exists():
+    st = torch.load(state_file, map_location=DEV, weights_only=True)
+    with torch.no_grad():
+        for n, q in student.named_parameters():
+            q.copy_(st["params"][n])
+    opt.load_state_dict(st["opt"])
+    start = st["step"]
+    torch.set_rng_state(st["rng"].cpu())
+    torch.cuda.set_rng_state(st["cuda_rng"].cpu())
+    log(event="resumed", step=start)
+for step in range(start + 1, args.steps + 1):
     f = step / args.steps
     lr = args.lr * (f / 0.02 if f < 0.02 else 0.5 * (1 + math.cos(math.pi * (f - 0.02) / 0.98)))
     for g in opt.param_groups:
@@ -272,8 +294,13 @@ for step in range(1, args.steps + 1):
             sec=round((time.time() - T0), 1), vram=round(torch.cuda.max_memory_allocated() / 2**30, 2))
     if step % args.eval_every == 0 or step == args.steps:
         s = solved(runtime, student, puzzles, sols)
-        log(event="eval", step=step, solved=s)
+        log(event="eval", step=step, solved=s, **({"val": solved(runtime, student, *val)} if val else {}))
         best = max(best, (s[0], step))
+    if args.state_every and step % args.state_every == 0:
+        tmp = args.out / "state.tmp"
+        torch.save({"params": {n: q.detach() for n, q in student.named_parameters()}, "opt": opt.state_dict(), "step": step,
+                    "rng": torch.get_rng_state(), "cuda_rng": torch.cuda.get_rng_state()}, tmp)
+        os.replace(tmp, state_file)
 log(event="done", best=best)
 trunk["s"].clear()
 trunk["t"].clear()
