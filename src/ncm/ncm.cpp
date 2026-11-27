@@ -549,8 +549,11 @@ void littlebit_ncm::load(const char * path, const littlebit_ncm_params & p) {
         if (t->ne[0] != n0 || t->ne[1] != n1 || t->ne[2] != 1 || t->ne[3] != 1) {
             fail("wrong shape of tensor " + name);
         }
-        if (t->type != GGML_TYPE_F32 && !(matrix && t->type == GGML_TYPE_F16) &&
-            !(matrix && !table && t->type == GGML_TYPE_Q8_0)) {
+        // weight matrices may be in any of ggml's block formats; tables (looked up by row) stay F32 or F16
+        const bool block = t->type == GGML_TYPE_Q8_0 || t->type == GGML_TYPE_Q4_0 || t->type == GGML_TYPE_Q4_1 ||
+                           t->type == GGML_TYPE_Q5_0 || t->type == GGML_TYPE_Q5_1 || t->type == GGML_TYPE_Q4_K ||
+                           t->type == GGML_TYPE_Q5_K || t->type == GGML_TYPE_Q6_K;
+        if (t->type != GGML_TYPE_F32 && !(matrix && t->type == GGML_TYPE_F16) && !(matrix && !table && block)) {
             fail("unsupported type of tensor " + name);
         }
         used[t] = matrix;

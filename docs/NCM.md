@@ -23,6 +23,11 @@ official evaluation uses, its `config/eval/*.yaml` do. `--student student.pt` ta
 dict (`tools/ncm/train_sudoku.py`). In C, see `littlebit_ncm_*` in [littlebit_ncm.h](../include/littlebit_ncm.h). A sudoku answer is
 the model's output and is not checked.
 
+Weight matrices may also be in ggml's other block formats (Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K). The converter
+writes at most Q8_0; `tools/ncm/requant.py` re-quantizes its output. TinyStories in Q4_0 is 113 MB instead of 162 MB, with
+a peak RSS of 220 MB instead of 268 MB on x86-64 (4 threads, about the same speed); its stories read like those of the
+Q8_0 file (compared by eye on the same seeds, no metric).
+
 ## Validation
 
 `tests/ncm/test_ncm.py` compares tiny random models, with dense and with LittleBit layers, to a numpy implementation.
