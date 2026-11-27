@@ -95,10 +95,16 @@ block. Bits per weight include the scales.
 | 2 bits, a | 3.0 | 97.25 % | 32.40 % | 0 % |
 | 2 bits, s | 2.5 | 94.70 % | 1.35 % | 0 % |
 | LittleBit, trained | 0.545 | 96.28 % (3 seeds) | 81.00 % | 23.35 % |
+| LittleBit, trained 3x longer (6,000 steps) | 0.545 | | 84.85 % | 32.80 % |
+| 2 bits, a, trained the same way (2,000 steps) | 3.0 | 99.25 % | 96.10 % | 79.70 % |
 
-At four bits rounding costs at most one point. Below three bits it fails on the harder puzzles, where LittleBit at
-0.55 bits still solves 81 % and 23 %. The comparison favours LittleBit, which is trained: a 2-bit model trained the same
-way, and calibrated methods such as GPTQ, were not tried. LittleBit is trained with Samsung's CC BY-NC 4.0 code, so
+At four bits rounding costs at most one point. Below three bits rounding fails on the harder puzzles, where LittleBit at
+0.55 bits still solves 81 % and 23 %. But training is what makes the difference, not the format: the same layers rounded
+to 2 bits in blocks of 32 (3.0 bits per weight with the scales) and trained the same way (`tools/ncm/train_sudoku.py
+--eff-bit 0 --wbits 2`, straight-through rounding) solve 99.25 %, 96.10 % and 79.70 %, far above LittleBit at 0.55 bits
+on medium and hard. Training LittleBit three times longer helps (84.85 % and 32.80 %, still improving at the end) but
+does not close the gap. LittleBit's advantage is size: 0.55 against 3.0 bits per weight. Calibrated methods such as
+GPTQ were not tried. LittleBit is trained with Samsung's CC BY-NC 4.0 code, so
 these models may not be used commercially.
 
 ## Speed

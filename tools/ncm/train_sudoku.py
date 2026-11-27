@@ -24,6 +24,8 @@ ap.add_argument("--artifacts", type=Path, required=True)
 ap.add_argument("--data", type=Path, required=True)
 ap.add_argument("--difficulty", default="easy", choices=["easy", "medium", "hard"])
 ap.add_argument("--eff-bit", type=float, default=0.55, help="0: keep dense weights (control)")
+ap.add_argument("--wbits", type=int, default=0, help="with --eff-bit 0: train the same layers rounded to this many bits instead")
+ap.add_argument("--wblock", type=int, default=32, help="block size for --wbits; each block has an fp16 scale and offset")
 ap.add_argument("--itq", type=int, default=1)
 ap.add_argument("--steps", type=int, default=2000)
 ap.add_argument("--batch", type=int, default=128)
@@ -199,6 +201,35 @@ def littlebit_student(teacher):
     return student
 
 
+class RoundedLinear(nn.Linear):
+    """Weights rounded to 2^wbits levels per block of a row, min to max with an fp16 scale and offset; straight-through
+    gradients. Bits per weight: wbits + 32 / wblock."""
+
+    def forward(self, x):
+        W = self.weight
+        out, n = W.shape
+        pad = -n % args.wblock
+        b = F.pad(W, (0, pad)).reshape(-1, args.wblock)
+        lo, hi = b.amin(1, keepdim=True), b.amax(1, keepdim=True)
+        scale = ((hi - lo) / (2 ** args.wbits - 1)).clamp_min(1e-8).half().float()
+        lo = lo.half().float()
+        q = ((b - lo) / scale).round().clamp(0, 2 ** args.wbits - 1) * scale + lo
+        q = q.reshape(out, n + pad)[:, :n]
+        return F.linear(x, W + (q - W).detach(), self.bias)
+
+
+def rounded_student(teacher):
+    student = copy.deepcopy(teacher)
+    n = 0
+    for mod in student.transformer.blocks.modules():
+        if type(mod) is nn.Linear:
+            mod.__class__ = RoundedLinear
+            n += mod.weight.numel()
+    log(event="student", rounded_bits=args.wbits, block=args.wblock, quantized_weights=n,
+        actual_bpw=args.wbits + 32 / args.wblock)
+    return student.to(DEV)
+
+
 torch.manual_seed(args.seed)
 runtime = load_teacher()
 teacher = runtime.model.eval().requires_grad_(False)
@@ -217,7 +248,12 @@ if args.val:
     val = tokens(held, blank)
 log(event="grids", n=len(grids), val=args.val)
 
-student = littlebit_student(teacher) if args.eff_bit > 0 else copy.deepcopy(teacher)
+if args.eff_bit > 0:
+    student = littlebit_student(teacher)
+elif args.wbits:
+    student = rounded_student(teacher)
+else:
+    student = copy.deepcopy(teacher)
 student.requires_grad_(True)
 log(event="init", solved=solved(runtime, student, puzzles, sols))
 codec = runtime.tokenizer.vqvae
